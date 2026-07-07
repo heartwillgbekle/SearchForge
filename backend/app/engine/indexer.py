@@ -1,5 +1,5 @@
 from collections import defaultdict
-from engine.preprocessor import tokenize
+from .preprocessor import tokenize
 
 
 class InvertedIndex:

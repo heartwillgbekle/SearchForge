@@ -1,30 +1,12 @@
-from engine.analytics import Analytics
-from engine.database import Database
-from engine.document_loader import load_documents
-from engine.indexer import InvertedIndex
-from engine.searcher import Searcher
+"""Interactive terminal search loop.
 
+Kept for local exploration. It uses the same SearchEngine service the
+API uses, so behavior stays in sync. Run with:
 
-def total_postings(index):
-    return sum(len(postings) for postings in index.index.values())
+    python -m backend.app.cli
+"""
 
-
-def save_documents_metadata(database, index):
-    inserted = 0
-    skipped = 0
-    for file_name, text in index.documents.items():
-        was_inserted = database.save_document(
-            file_name=file_name,
-            title=file_name.rsplit(".", 1)[0],
-            file_path=f"documents/{file_name}",
-            word_count=index.document_lengths.get(file_name, 0),
-            text=text,
-        )
-        if was_inserted:
-            inserted += 1
-        else:
-            skipped += 1
-    return inserted, skipped
+from .service import SearchEngine
 
 
 def print_stats(analytics):
@@ -52,27 +34,13 @@ def print_slow(analytics):
 
 
 def main():
-    documents = load_documents("documents")
-
-    index = InvertedIndex()
-    index.build(documents)
-
-    searcher = Searcher(index)
-
-    database = Database()
-    analytics = Analytics(database)
-
-    inserted, skipped = save_documents_metadata(database, index)
-    database.save_index_metadata(
-        total_documents=index.total_documents(),
-        total_terms=index.total_terms(),
-        total_postings=total_postings(index),
-    )
+    engine = SearchEngine()
+    inserted, skipped = engine.bootstrap()
 
     print("SearchForge Local Engine")
     print("------------------------")
-    print(f"Documents indexed: {index.total_documents()}")
-    print(f"Unique terms: {index.total_terms()}")
+    print(f"Documents indexed: {engine.index.total_documents()}")
+    print(f"Unique terms: {engine.index.total_terms()}")
     print(f"Metadata: {inserted} new, {skipped} duplicate(s) skipped")
     print("Commands: stats, slow, exit")
     print()
@@ -86,20 +54,14 @@ def main():
             break
 
         if command == "stats":
-            print_stats(analytics)
+            print_stats(engine.analytics)
             continue
 
         if command == "slow":
-            print_slow(analytics)
+            print_slow(engine.analytics)
             continue
 
-        response = searcher.search(query)
-
-        analytics.record_query(
-            query=query,
-            latency_ms=response["latency_ms"],
-            result_count=len(response["results"]),
-        )
+        response = engine.search(query)
 
         print(f"\nQuery latency: {response['latency_ms']} ms")
         print("Results:")

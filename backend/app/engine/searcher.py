@@ -1,6 +1,6 @@
 import math
 import time
-from engine.preprocessor import tokenize
+from .preprocessor import tokenize
 
 
 class Searcher:
