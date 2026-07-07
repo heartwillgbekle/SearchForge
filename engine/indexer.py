@@ -27,6 +27,12 @@ class InvertedIndex:
     def get_postings(self, term):
         return self.index.get(term, {})
 
+    def document_frequency(self, term):
+        return len(self.index.get(term, {}))
+
+    def term_frequency(self, term, doc_id):
+        return self.index.get(term, {}).get(doc_id, 0)
+
     def total_documents(self):
         return len(self.documents)
 
