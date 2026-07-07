@@ -18,8 +18,10 @@ def normalize_query(query):
     return " ".join(query.lower().split())
 
 
-def cache_key(query):
-    return f"search:{normalize_query(query)}"
+def cache_key(query, ranking="bm25"):
+    # Include the ranking method so different algorithms never share
+    # a cached result (e.g. TF-IDF and BM25 must not mix).
+    return f"search:{ranking.lower()}:{normalize_query(query)}"
 
 
 def _connect():
@@ -53,25 +55,25 @@ class SearchCache:
     def enabled(self):
         return self.client is not None
 
-    def get(self, query):
+    def get(self, query, ranking="bm25"):
         """Return the cached response dict for a query, or None."""
         if not self.client:
             return None
         try:
-            raw = self.client.get(cache_key(query))
+            raw = self.client.get(cache_key(query, ranking))
         except Exception:
             return None
         if raw is None:
             return None
         return json.loads(raw)
 
-    def set(self, query, response):
+    def set(self, query, response, ranking="bm25"):
         """Store a search response with the configured expiration."""
         if not self.client:
             return
         try:
             self.client.set(
-                cache_key(query),
+                cache_key(query, ranking),
                 json.dumps(response),
                 ex=self.ttl_seconds,
             )

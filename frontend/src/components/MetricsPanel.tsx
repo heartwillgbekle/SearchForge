@@ -16,14 +16,19 @@ export default function MetricsPanel({ metrics }: { metrics: Metrics | null }) {
 
   return (
     <section className="mt-10">
-      <h2 className="mb-3 text-lg font-semibold">Index & search metrics</h2>
+      <h2 className="mb-3 text-lg font-semibold">
+        Index & search metrics
+        <span className="ml-2 text-sm font-normal text-gray-500">
+          Ranking: {metrics.ranking_method}
+        </span>
+      </h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Documents indexed" value={metrics.documents_indexed} />
         <Stat label="Unique terms" value={metrics.unique_terms} />
         <Stat label="Total searches" value={metrics.total_searches} />
         <Stat
-          label="Average latency"
-          value={`${metrics.average_latency_ms} ms`}
+          label="Avg document length"
+          value={metrics.average_document_length}
         />
       </div>
 

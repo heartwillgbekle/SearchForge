@@ -14,6 +14,7 @@ export interface SearchResponse {
   latency_ms: number;
   result_count: number;
   cache_hit: boolean;
+  ranking_method: string;
   results: SearchResult[];
 }
 
@@ -33,6 +34,8 @@ export interface Metrics {
   total_postings: number;
   total_searches: number;
   average_latency_ms: number;
+  average_document_length: number;
+  ranking_method: string;
   cache_enabled: boolean;
   cache_hits: number;
   cache_misses: number;

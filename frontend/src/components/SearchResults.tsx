@@ -23,6 +23,9 @@ export default function SearchResults({
         >
           Cache: {response.cache_hit ? "hit" : "miss"}
         </span>
+        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+          {response.ranking_method}
+        </span>
       </p>
 
       {response.result_count === 0 ? (

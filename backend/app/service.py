@@ -13,6 +13,7 @@ from .engine.cache import SearchCache
 from .engine.database import Database
 from .engine.document_loader import load_documents
 from .engine.indexer import InvertedIndex
+from .engine.ranker import DEFAULT_RANKING, get_ranker
 from .engine.searcher import Searcher
 
 
@@ -76,11 +77,15 @@ class SearchEngine:
 
     # ---- operations used by the API routes ------------------------------
 
-    def search(self, query, top_k=5):
+    def search(self, query, top_k=5, ranking=None):
+        ranker = get_ranker(ranking)
+        ranking_key = ranker.name.lower()
+
         # 1. Cache lookup. Latency is measured around the lookup itself so a
-        #    hit reflects the (much smaller) cache-serving time.
+        #    hit reflects the (much smaller) cache-serving time. The ranking
+        #    method is part of the key so algorithms never mix.
         cache_start = time.perf_counter()
-        cached = self.cache.get(query)
+        cached = self.cache.get(query, ranking_key)
         if cached is not None:
             latency_ms = round((time.perf_counter() - cache_start) * 1000, 3)
             response = dict(cached)
@@ -95,12 +100,12 @@ class SearchEngine:
             return response
 
         # 2. Cache miss: run the real search and store the response.
-        response = self.searcher.search(query, top_k=top_k)
+        response = self.searcher.search(query, top_k=top_k, ranking=ranking)
         response["result_count"] = len(response["results"])
         response["cache_hit"] = False
 
         # Store without the per-request fields that shouldn't be replayed.
-        self.cache.set(query, response)
+        self.cache.set(query, response, ranking_key)
 
         self.analytics.record_query(
             query=query,
@@ -116,6 +121,10 @@ class SearchEngine:
             "documents_indexed": self.index.total_documents(),
             "unique_terms": self.index.total_terms(),
             "total_postings": _total_postings(self.index),
+            "average_document_length": round(
+                self.index.average_document_length(), 2
+            ),
+            "ranking_method": get_ranker(DEFAULT_RANKING).name,
             "total_searches": self.analytics.total_searches(),
             "average_latency_ms": self.analytics.average_latency(),
             "cache_enabled": self.cache.enabled,

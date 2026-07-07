@@ -38,3 +38,8 @@ class InvertedIndex:
 
     def total_terms(self):
         return len(self.index)
+
+    def average_document_length(self):
+        if not self.document_lengths:
+            return 0.0
+        return sum(self.document_lengths.values()) / len(self.document_lengths)

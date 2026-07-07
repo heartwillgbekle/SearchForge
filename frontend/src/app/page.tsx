@@ -51,7 +51,7 @@ export default function Home() {
       <header className="mb-8">
         <h1 className="text-3xl font-bold">SearchForge</h1>
         <p className="mt-1 text-gray-600 dark:text-gray-400">
-          Search documents using a custom inverted index and TF-IDF ranking.
+          Search documents using a custom inverted index and BM25 ranking.
         </p>
       </header>
 
