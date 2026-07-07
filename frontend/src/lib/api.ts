@@ -13,6 +13,7 @@ export interface SearchResponse {
   query: string;
   latency_ms: number;
   result_count: number;
+  cache_hit: boolean;
   results: SearchResult[];
 }
 
@@ -32,6 +33,12 @@ export interface Metrics {
   total_postings: number;
   total_searches: number;
   average_latency_ms: number;
+  cache_enabled: boolean;
+  cache_hits: number;
+  cache_misses: number;
+  cache_hit_rate: number;
+  average_cached_latency_ms: number;
+  average_uncached_latency_ms: number;
   popular_queries: PopularQuery[];
   slowest_queries: SlowQuery[];
 }

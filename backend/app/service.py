@@ -5,8 +5,11 @@ API routes and the CLI share one construction path. Routes should call
 methods here rather than touching the engine internals directly.
 """
 
+import time
+
 from . import config
 from .engine.analytics import Analytics
+from .engine.cache import SearchCache
 from .engine.database import Database
 from .engine.document_loader import load_documents
 from .engine.indexer import InvertedIndex
@@ -26,6 +29,7 @@ class SearchEngine:
         self.searcher = None
         self.database = None
         self.analytics = None
+        self.cache = None
 
     def bootstrap(self):
         """Load documents, build the index, and connect storage.
@@ -41,6 +45,9 @@ class SearchEngine:
         self.searcher = Searcher(self.index)
         self.database = Database(self.database_path)
         self.analytics = Analytics(self.database)
+        self.cache = SearchCache()
+        # The index was just (re)built, so any cached responses are stale.
+        self.cache.clear()
 
         inserted, skipped = self._save_documents_metadata()
         self.database.save_index_metadata(
@@ -70,13 +77,37 @@ class SearchEngine:
     # ---- operations used by the API routes ------------------------------
 
     def search(self, query, top_k=5):
+        # 1. Cache lookup. Latency is measured around the lookup itself so a
+        #    hit reflects the (much smaller) cache-serving time.
+        cache_start = time.perf_counter()
+        cached = self.cache.get(query)
+        if cached is not None:
+            latency_ms = round((time.perf_counter() - cache_start) * 1000, 3)
+            response = dict(cached)
+            response["latency_ms"] = latency_ms
+            response["cache_hit"] = True
+            self.analytics.record_query(
+                query=query,
+                latency_ms=latency_ms,
+                result_count=response["result_count"],
+                cache_hit=True,
+            )
+            return response
+
+        # 2. Cache miss: run the real search and store the response.
         response = self.searcher.search(query, top_k=top_k)
+        response["result_count"] = len(response["results"])
+        response["cache_hit"] = False
+
+        # Store without the per-request fields that shouldn't be replayed.
+        self.cache.set(query, response)
+
         self.analytics.record_query(
             query=query,
             latency_ms=response["latency_ms"],
-            result_count=len(response["results"]),
+            result_count=response["result_count"],
+            cache_hit=False,
         )
-        response["result_count"] = len(response["results"])
         return response
 
     def metrics(self):
@@ -87,6 +118,12 @@ class SearchEngine:
             "total_postings": _total_postings(self.index),
             "total_searches": self.analytics.total_searches(),
             "average_latency_ms": self.analytics.average_latency(),
+            "cache_enabled": self.cache.enabled,
+            "cache_hits": self.analytics.cache_hits(),
+            "cache_misses": self.analytics.cache_misses(),
+            "cache_hit_rate": self.analytics.cache_hit_rate(),
+            "average_cached_latency_ms": self.analytics.average_cached_latency(),
+            "average_uncached_latency_ms": self.analytics.average_uncached_latency(),
             "popular_queries": [
                 {"query": query, "count": count} for query, count in popular
             ],

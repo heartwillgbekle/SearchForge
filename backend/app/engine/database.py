@@ -45,6 +45,7 @@ class Database:
                 query_text    TEXT NOT NULL,
                 latency_ms    REAL NOT NULL,
                 result_count  INTEGER NOT NULL,
+                cache_hit     INTEGER NOT NULL DEFAULT 0,
                 created_at    TEXT NOT NULL
             );
 
@@ -57,7 +58,19 @@ class Database:
             );
             """
         )
+        self._migrate()
         self.connection.commit()
+
+    def _migrate(self):
+        """Apply small schema upgrades to pre-existing databases."""
+        columns = {
+            row["name"]
+            for row in self.connection.execute("PRAGMA table_info(queries)")
+        }
+        if "cache_hit" not in columns:
+            self.connection.execute(
+                "ALTER TABLE queries ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0"
+            )
 
     # ---- documents -------------------------------------------------------
 
@@ -117,16 +130,18 @@ class Database:
 
     # ---- queries ---------------------------------------------------------
 
-    def save_query(self, query_text, latency_ms, result_count):
+    def save_query(self, query_text, latency_ms, result_count, cache_hit=False):
         self.connection.execute(
             """
-            INSERT INTO queries (query_text, latency_ms, result_count, created_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO queries
+                (query_text, latency_ms, result_count, cache_hit, created_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 query_text,
                 latency_ms,
                 result_count,
+                1 if cache_hit else 0,
                 datetime.now().isoformat(timespec="seconds"),
             ),
         )
@@ -143,6 +158,27 @@ class Database:
     def average_latency(self):
         row = self.connection.execute(
             "SELECT AVG(latency_ms) AS avg FROM queries"
+        ).fetchone()
+        if row["avg"] is None:
+            return 0.0
+        return round(row["avg"], 3)
+
+    def cache_hits(self):
+        row = self.connection.execute(
+            "SELECT COUNT(*) AS n FROM queries WHERE cache_hit = 1"
+        ).fetchone()
+        return row["n"]
+
+    def cache_misses(self):
+        row = self.connection.execute(
+            "SELECT COUNT(*) AS n FROM queries WHERE cache_hit = 0"
+        ).fetchone()
+        return row["n"]
+
+    def average_latency_by_cache(self, cache_hit):
+        row = self.connection.execute(
+            "SELECT AVG(latency_ms) AS avg FROM queries WHERE cache_hit = ?",
+            (1 if cache_hit else 0,),
         ).fetchone()
         if row["avg"] is None:
             return 0.0
