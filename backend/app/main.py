@@ -3,7 +3,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import document_routes, metrics_routes, search_routes
+from .api import (
+    autocomplete_routes,
+    document_routes,
+    metrics_routes,
+    search_routes,
+)
 from .dependencies import set_engine
 from .service import SearchEngine
 
@@ -34,6 +39,7 @@ app.add_middleware(
 app.include_router(search_routes.router)
 app.include_router(metrics_routes.router)
 app.include_router(document_routes.router)
+app.include_router(autocomplete_routes.router)
 
 
 @app.get("/")

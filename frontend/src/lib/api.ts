@@ -81,3 +81,14 @@ export function search(query: string): Promise<SearchResponse> {
 export function fetchMetrics(): Promise<Metrics> {
   return getJson<Metrics>("/metrics");
 }
+
+export interface AutocompleteResponse {
+  prefix: string;
+  suggestions: string[];
+}
+
+export function autocomplete(prefix: string): Promise<AutocompleteResponse> {
+  return getJson<AutocompleteResponse>(
+    `/autocomplete?prefix=${encodeURIComponent(prefix)}`,
+  );
+}

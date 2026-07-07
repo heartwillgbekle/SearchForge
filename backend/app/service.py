@@ -9,6 +9,7 @@ import time
 
 from . import config
 from .engine.analytics import Analytics
+from .engine.autocomplete import QueryTrie
 from .engine.cache import SearchCache
 from .engine.database import Database
 from .engine.document_loader import load_documents
@@ -31,6 +32,7 @@ class SearchEngine:
         self.database = None
         self.analytics = None
         self.cache = None
+        self.autocomplete = QueryTrie()
 
     def bootstrap(self):
         """Load documents, build the index, and connect storage.
@@ -49,6 +51,16 @@ class SearchEngine:
         self.cache = SearchCache()
         # The index was just (re)built, so any cached responses are stale.
         self.cache.clear()
+
+        # Rebuild the autocomplete Trie from persisted query history so
+        # suggestions survive restarts.
+        self.autocomplete = QueryTrie()
+        for record in self.database.query_frequencies():
+            self.autocomplete.insert(
+                record["query_text"],
+                frequency=record["frequency"],
+                last_searched=record["last_searched"],
+            )
 
         inserted, skipped = self._save_documents_metadata()
         self.database.save_index_metadata(
@@ -80,6 +92,10 @@ class SearchEngine:
     def search(self, query, top_k=5, ranking=None):
         ranker = get_ranker(ranking)
         ranking_key = ranker.name.lower()
+
+        # Record the query for autocomplete (bumps its frequency), on every
+        # search regardless of cache outcome.
+        self.autocomplete.insert(query)
 
         # 1. Cache lookup. Latency is measured around the lookup itself so a
         #    hit reflects the (much smaller) cache-serving time. The ranking
@@ -114,6 +130,9 @@ class SearchEngine:
             cache_hit=False,
         )
         return response
+
+    def suggest(self, prefix, limit=5):
+        return self.autocomplete.suggest(prefix, limit=limit)
 
     def metrics(self):
         popular = self.analytics.popular_queries()

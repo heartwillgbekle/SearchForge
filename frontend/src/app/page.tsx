@@ -26,8 +26,8 @@ export default function Home() {
     loadMetrics();
   }, [loadMetrics]);
 
-  async function handleSearch() {
-    const trimmed = query.trim();
+  async function runSearch(rawQuery: string) {
+    const trimmed = rawQuery.trim();
     if (!trimmed) return;
 
     setLoading(true);
@@ -46,6 +46,17 @@ export default function Home() {
     }
   }
 
+  function handleSearch() {
+    runSearch(query);
+  }
+
+  // Clicking a suggestion fills the box and searches it immediately,
+  // without waiting for the query state update to propagate.
+  function handleSelectSuggestion(value: string) {
+    setQuery(value);
+    runSearch(value);
+  }
+
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-12">
       <header className="mb-8">
@@ -59,6 +70,7 @@ export default function Home() {
         query={query}
         onQueryChange={setQuery}
         onSearch={handleSearch}
+        onSelectSuggestion={handleSelectSuggestion}
         loading={loading}
       />
 

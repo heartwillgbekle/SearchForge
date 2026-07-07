@@ -197,6 +197,23 @@ class Database:
         ).fetchall()
         return [(row["query_text"], row["n"]) for row in rows]
 
+    def query_frequencies(self):
+        """Distinct queries with how often they were searched and when last.
+
+        Used to seed the autocomplete Trie on startup so suggestions
+        survive restarts.
+        """
+        rows = self.connection.execute(
+            """
+            SELECT query_text,
+                   COUNT(*) AS frequency,
+                   MAX(created_at) AS last_searched
+            FROM queries
+            GROUP BY query_text
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def slowest_queries(self, top_k=5):
         rows = self.connection.execute(
             """
