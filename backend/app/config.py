@@ -1,11 +1,23 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # backend/app/
 APP_DIR = Path(__file__).resolve().parent
+# backend/
+BACKEND_DIR = APP_DIR.parent
+
+# Load backend/.env so DATABASE_URL etc. are available. Real environment
+# variables take precedence over .env values.
+load_dotenv(BACKEND_DIR / ".env")
 
 DOCUMENTS_DIR = APP_DIR / "data" / "documents"
-DATABASE_PATH = APP_DIR / "data" / "searchforge.db"
+
+# --- PostgreSQL ------------------------------------------------------------
+# Production-style storage for metadata, query analytics, and autocomplete
+# history. Set DATABASE_URL in backend/.env (postgresql://user:pass@host/db).
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # --- Redis cache -----------------------------------------------------------
 REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")

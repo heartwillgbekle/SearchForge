@@ -4,6 +4,11 @@ __pycache__/
 .venv/
 venv/
 
+# Secrets / environment
+.env
+.env.*
+!.env.example
+
 # SearchForge generated data
 *.db
 backend/app/data/*.db
