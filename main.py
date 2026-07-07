@@ -1,7 +1,30 @@
 from engine.analytics import Analytics
+from engine.database import Database
 from engine.document_loader import load_documents
 from engine.indexer import InvertedIndex
 from engine.searcher import Searcher
+
+
+def total_postings(index):
+    return sum(len(postings) for postings in index.index.values())
+
+
+def save_documents_metadata(database, index):
+    inserted = 0
+    skipped = 0
+    for file_name, text in index.documents.items():
+        was_inserted = database.save_document(
+            file_name=file_name,
+            title=file_name.rsplit(".", 1)[0],
+            file_path=f"documents/{file_name}",
+            word_count=index.document_lengths.get(file_name, 0),
+            text=text,
+        )
+        if was_inserted:
+            inserted += 1
+        else:
+            skipped += 1
+    return inserted, skipped
 
 
 def print_stats(analytics):
@@ -24,7 +47,7 @@ def print_slow(analytics):
     if not slowest:
         print("No queries recorded yet.")
     for i, record in enumerate(slowest, start=1):
-        print(f"{i}. {record['query']} — {record['latency_ms']} ms")
+        print(f"{i}. {record['query_text']} — {record['latency_ms']} ms")
     print()
 
 
@@ -35,12 +58,22 @@ def main():
     index.build(documents)
 
     searcher = Searcher(index)
-    analytics = Analytics()
+
+    database = Database()
+    analytics = Analytics(database)
+
+    inserted, skipped = save_documents_metadata(database, index)
+    database.save_index_metadata(
+        total_documents=index.total_documents(),
+        total_terms=index.total_terms(),
+        total_postings=total_postings(index),
+    )
 
     print("SearchForge Local Engine")
     print("------------------------")
     print(f"Documents indexed: {index.total_documents()}")
     print(f"Unique terms: {index.total_terms()}")
+    print(f"Metadata: {inserted} new, {skipped} duplicate(s) skipped")
     print("Commands: stats, slow, exit")
     print()
 

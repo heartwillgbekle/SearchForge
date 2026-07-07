@@ -1,43 +1,25 @@
-from collections import Counter
-from datetime import datetime
-
-
 class Analytics:
-    """Records search activity in memory and summarizes performance.
+    """Records search activity and summarizes performance.
 
-    This is deliberately independent of the searcher. Later it can be
-    backed by a database (PostgreSQL) without touching search logic.
+    Backed by the Database layer so analytics survive program restarts.
+    It stays independent of the searcher: the searcher produces results
+    and latency, and this component only records and summarizes them.
     """
 
-    def __init__(self):
-        self.queries = []
+    def __init__(self, database):
+        self.database = database
 
     def record_query(self, query, latency_ms, result_count):
-        self.queries.append({
-            "query": query,
-            "latency_ms": latency_ms,
-            "result_count": result_count,
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-        })
+        self.database.save_query(query, latency_ms, result_count)
 
     def total_searches(self):
-        return len(self.queries)
+        return self.database.total_searches()
 
     def average_latency(self):
-        if not self.queries:
-            return 0.0
-
-        total = sum(record["latency_ms"] for record in self.queries)
-        return round(total / len(self.queries), 3)
+        return self.database.average_latency()
 
     def popular_queries(self, top_k=5):
-        counts = Counter(record["query"] for record in self.queries)
-        return counts.most_common(top_k)
+        return self.database.popular_queries(top_k)
 
     def slowest_queries(self, top_k=5):
-        ranked = sorted(
-            self.queries,
-            key=lambda record: record["latency_ms"],
-            reverse=True,
-        )
-        return ranked[:top_k]
+        return self.database.slowest_queries(top_k)
