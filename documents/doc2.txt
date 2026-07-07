@@ -1,0 +1,1 @@
+Software engineering interviews often test data structures, algorithms, system design, and problem solving.

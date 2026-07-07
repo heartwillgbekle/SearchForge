@@ -1,0 +1,1 @@
+Machine learning helps computers learn from data. Search engines use machine learning to rank results.
