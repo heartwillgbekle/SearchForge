@@ -16,6 +16,32 @@ class Searcher:
 
         return math.log((total_docs + 1) / (doc_freq + 1)) + 1
 
+    def make_snippet(self, text, query_terms, window=50):
+        lower_text = text.lower()
+
+        match_pos = -1
+        for term in query_terms:
+            position = lower_text.find(term)
+            if position != -1:
+                match_pos = position
+                break
+
+        # No query term found in the document: fall back to the start.
+        if match_pos == -1:
+            return text[:120]
+
+        start = max(0, match_pos - window)
+        end = min(len(text), match_pos + window)
+
+        snippet = text[start:end]
+
+        if start > 0:
+            snippet = "..." + snippet
+        if end < len(text):
+            snippet = snippet + "..."
+
+        return snippet
+
     def search(self, query, top_k=5):
         start_time = time.perf_counter()
 
@@ -47,10 +73,11 @@ class Searcher:
         results = []
 
         for doc_id, score in ranked_results[:top_k]:
+            document_text = self.inverted_index.documents[doc_id]
             results.append({
                 "document": doc_id,
                 "score": round(score, 4),
-                "snippet": self.inverted_index.documents[doc_id][:120]
+                "snippet": self.make_snippet(document_text, query_terms)
             })
 
         return {
