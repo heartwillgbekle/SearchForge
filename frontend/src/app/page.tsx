@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import * as api from "@/lib/api";
 import SearchBar from "@/components/SearchBar";
@@ -59,11 +60,19 @@ export default function Home() {
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-12">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold">SearchForge</h1>
-        <p className="mt-1 text-gray-600 dark:text-gray-400">
-          Search documents using a custom inverted index and BM25 ranking.
-        </p>
+      <header className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">SearchForge</h1>
+          <p className="mt-1 text-gray-600 dark:text-gray-400">
+            Search documents using a custom inverted index and BM25 ranking.
+          </p>
+        </div>
+        <Link
+          href="/dashboard"
+          className="shrink-0 rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900"
+        >
+          Dashboard →
+        </Link>
       </header>
 
       <SearchBar

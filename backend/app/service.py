@@ -11,10 +11,12 @@ from . import config
 from .db.connection import DatabasePool
 from .db.repositories import (
     AutocompleteRepository,
+    BenchmarkRepository,
     DocumentRepository,
     IndexMetadataRepository,
     QueryRepository,
 )
+from .engine import benchmark
 from .engine.analytics import Analytics
 from .engine.autocomplete import QueryTrie
 from .engine.cache import SearchCache, normalize_query
@@ -44,7 +46,11 @@ class SearchEngine:
         self.query_repo = None
         self.autocomplete_repo = None
         self.index_meta_repo = None
+        self.benchmark_repo = None
         self.analytics = None
+
+        # Timing of the last in-memory index build (ms).
+        self.index_build_time_ms = 0.0
 
     def bootstrap(self):
         """Load documents, build the index, and connect storage.
@@ -56,7 +62,11 @@ class SearchEngine:
         documents = load_documents(self.documents_dir)
 
         self.index = InvertedIndex()
+        build_start = time.perf_counter()
         self.index.build(documents)
+        self.index_build_time_ms = round(
+            (time.perf_counter() - build_start) * 1000, 3
+        )
         self.searcher = Searcher(self.index)
 
         # Connect PostgreSQL and wire the repositories.
@@ -66,6 +76,7 @@ class SearchEngine:
         self.query_repo = QueryRepository(self.pool)
         self.autocomplete_repo = AutocompleteRepository(self.pool)
         self.index_meta_repo = IndexMetadataRepository(self.pool)
+        self.benchmark_repo = BenchmarkRepository(self.pool)
         self.analytics = Analytics(self.query_repo)
 
         self.cache = SearchCache()
@@ -88,6 +99,7 @@ class SearchEngine:
             unique_terms=self.index.total_terms(),
             total_postings=_total_postings(self.index),
             ranking_method=get_ranker(DEFAULT_RANKING).name,
+            index_build_time_ms=self.index_build_time_ms,
         )
         return inserted, skipped
 
@@ -189,3 +201,114 @@ class SearchEngine:
                 for record in self.analytics.slowest_queries()
             ],
         }
+
+    # ---- dashboard metrics ----------------------------------------------
+
+    def metrics_overview(self):
+        """The headline cards: index size + search speed + cache help."""
+        return {
+            "documents_indexed": self.index.total_documents(),
+            "unique_terms": self.index.total_terms(),
+            "total_postings": _total_postings(self.index),
+            "average_document_length": round(
+                self.index.average_document_length(), 2
+            ),
+            "index_build_time_ms": self.index_build_time_ms,
+            "ranking_method": get_ranker(DEFAULT_RANKING).name,
+            "total_searches": self.analytics.total_searches(),
+            "average_latency_ms": self.analytics.average_latency(),
+            "cache_hit_rate": self.analytics.cache_hit_rate(),
+        }
+
+    def index_metrics(self):
+        """Size and structure of the search index."""
+        stored = self.index_meta_repo.get() or {}
+        last_indexed = stored.get("last_indexed_at")
+        return {
+            "documents_indexed": self.index.total_documents(),
+            "unique_terms": self.index.total_terms(),
+            "total_postings": _total_postings(self.index),
+            "average_document_length": round(
+                self.index.average_document_length(), 2
+            ),
+            "index_build_time_ms": self.index_build_time_ms,
+            "ranking_method": get_ranker(DEFAULT_RANKING).name,
+            "last_indexed_at": (
+                last_indexed.isoformat() if last_indexed else None
+            ),
+        }
+
+    def search_metrics(self):
+        """How the search system behaves during use."""
+        return {
+            "total_searches": self.analytics.total_searches(),
+            "average_latency_ms": self.analytics.average_latency(),
+            "fastest_latency_ms": self.analytics.fastest_latency(),
+            "slowest_latency_ms": self.analytics.slowest_latency(),
+            "average_result_count": self.analytics.average_result_count(),
+            "zero_result_searches": self.analytics.zero_result_total(),
+        }
+
+    def cache_metrics(self):
+        return {
+            "cache_enabled": self.cache.enabled,
+            "cache_hits": self.analytics.cache_hits(),
+            "cache_misses": self.analytics.cache_misses(),
+            "cache_hit_rate": self.analytics.cache_hit_rate(),
+            "average_cached_latency_ms": self.analytics.average_cached_latency(),
+            "average_uncached_latency_ms": (
+                self.analytics.average_uncached_latency()
+            ),
+        }
+
+    def popular_queries(self, top_k=10):
+        return [
+            {"query": query, "count": count}
+            for query, count in self.analytics.popular_queries(top_k)
+        ]
+
+    def slowest_query_list(self, top_k=10):
+        return [
+            {
+                "query": record["query_text"],
+                "latency_ms": record["latency_ms"],
+                "result_count": record["result_count"],
+            }
+            for record in self.analytics.slowest_queries(top_k)
+        ]
+
+    def recent_queries(self, top_k=10):
+        return [
+            {
+                "query": record["query_text"],
+                "latency_ms": record["latency_ms"],
+                "result_count": record["result_count"],
+                "cache_hit": record["cache_hit"],
+                "ranking_method": record["ranking_method"],
+                "created_at": record["created_at"].isoformat(),
+            }
+            for record in self.analytics.recent_queries(top_k)
+        ]
+
+    def zero_result_queries(self, top_k=10):
+        return [
+            {"query": query, "count": count}
+            for query, count in self.analytics.zero_result_queries(top_k)
+        ]
+
+    def latency_over_time(self, buckets=30):
+        return self.analytics.searches_over_time(buckets)
+
+    # ---- benchmarks ------------------------------------------------------
+
+    def run_benchmark(self, sizes=None, warm_passes=None):
+        """Run the benchmark suite and persist each result to PostgreSQL."""
+        kwargs = {"repository": self.benchmark_repo}
+        if sizes is not None:
+            kwargs["sizes"] = sizes
+        if warm_passes is not None:
+            kwargs["warm_passes"] = warm_passes
+        return benchmark.run_benchmark(**kwargs)
+
+    def benchmark_history(self, limit=100):
+        return self.benchmark_repo.all(limit)

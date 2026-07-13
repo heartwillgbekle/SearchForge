@@ -138,6 +138,98 @@ class QueryRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def recent_queries(self, top_k=10):
+        with self.pool.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT query_text, latency_ms, result_count, cache_hit,
+                       ranking_method, created_at
+                FROM queries
+                ORDER BY created_at DESC, id DESC
+                LIMIT %s
+                """,
+                (top_k,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def zero_result_queries(self, top_k=10):
+        """Distinct queries that returned no results, most frequent first."""
+        with self.pool.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT query_text, COUNT(*) AS n
+                FROM queries
+                WHERE result_count = 0
+                GROUP BY query_text
+                ORDER BY n DESC
+                LIMIT %s
+                """,
+                (top_k,),
+            ).fetchall()
+        return [(row["query_text"], row["n"]) for row in rows]
+
+    def fastest_latency(self):
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                "SELECT MIN(latency_ms) AS v FROM queries"
+            ).fetchone()
+        return round(row["v"], 3) if row["v"] is not None else 0.0
+
+    def slowest_latency(self):
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                "SELECT MAX(latency_ms) AS v FROM queries"
+            ).fetchone()
+        return round(row["v"], 3) if row["v"] is not None else 0.0
+
+    def average_result_count(self):
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                "SELECT AVG(result_count) AS v FROM queries"
+            ).fetchone()
+        return round(row["v"], 2) if row["v"] is not None else 0.0
+
+    def zero_result_total(self):
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM queries WHERE result_count = 0"
+            ).fetchone()
+        return row["n"]
+
+    def searches_over_time(self, buckets=30):
+        """Per-minute counts, average latency, and cache-hit rate.
+
+        Returns oldest-first buckets so the frontend can plot a time
+        series directly. `buckets` caps how many recent minutes come back.
+        """
+        with self.pool.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    date_trunc('minute', created_at) AS bucket,
+                    COUNT(*)                          AS searches,
+                    AVG(latency_ms)                   AS avg_latency_ms,
+                    AVG(CASE WHEN cache_hit THEN 1.0 ELSE 0.0 END)
+                                                      AS cache_hit_rate
+                FROM queries
+                GROUP BY bucket
+                ORDER BY bucket DESC
+                LIMIT %s
+                """,
+                (buckets,),
+            ).fetchall()
+        series = [
+            {
+                "bucket": row["bucket"].isoformat(),
+                "searches": row["searches"],
+                "avg_latency_ms": round(row["avg_latency_ms"], 3),
+                "cache_hit_rate": round(row["cache_hit_rate"], 3),
+            }
+            for row in rows
+        ]
+        series.reverse()  # oldest -> newest for charting
+        return series
+
 
 class AutocompleteRepository:
     def __init__(self, pool):
@@ -174,22 +266,36 @@ class IndexMetadataRepository:
     def __init__(self, pool):
         self.pool = pool
 
-    def save(self, documents_indexed, unique_terms, total_postings, ranking_method):
+    def save(
+        self,
+        documents_indexed,
+        unique_terms,
+        total_postings,
+        ranking_method,
+        index_build_time_ms=None,
+    ):
         with self.pool.connection() as conn:
             conn.execute(
                 """
                 INSERT INTO index_metadata
-                    (id, documents_indexed, unique_terms,
-                     total_postings, ranking_method, last_indexed_at)
-                VALUES (1, %s, %s, %s, %s, now())
+                    (id, documents_indexed, unique_terms, total_postings,
+                     ranking_method, index_build_time_ms, last_indexed_at)
+                VALUES (1, %s, %s, %s, %s, %s, now())
                 ON CONFLICT (id) DO UPDATE SET
-                    documents_indexed = excluded.documents_indexed,
-                    unique_terms      = excluded.unique_terms,
-                    total_postings    = excluded.total_postings,
-                    ranking_method    = excluded.ranking_method,
-                    last_indexed_at   = now()
+                    documents_indexed   = excluded.documents_indexed,
+                    unique_terms        = excluded.unique_terms,
+                    total_postings      = excluded.total_postings,
+                    ranking_method      = excluded.ranking_method,
+                    index_build_time_ms = excluded.index_build_time_ms,
+                    last_indexed_at     = now()
                 """,
-                (documents_indexed, unique_terms, total_postings, ranking_method),
+                (
+                    documents_indexed,
+                    unique_terms,
+                    total_postings,
+                    ranking_method,
+                    index_build_time_ms,
+                ),
             )
 
     def get(self):
@@ -198,3 +304,51 @@ class IndexMetadataRepository:
                 "SELECT * FROM index_metadata WHERE id = 1"
             ).fetchone()
         return dict(row) if row else None
+
+
+class BenchmarkRepository:
+    def __init__(self, pool):
+        self.pool = pool
+
+    def save(self, result):
+        """Persist one benchmark run; returns the stored row (with id)."""
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                """
+                INSERT INTO benchmarks
+                    (dataset_name, document_count, unique_terms, total_postings,
+                     index_build_time_ms, average_latency_ms, p50_latency_ms,
+                     p95_latency_ms, p99_latency_ms, cache_hit_rate, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+                """,
+                (
+                    result["dataset_name"],
+                    result["document_count"],
+                    result["unique_terms"],
+                    result["total_postings"],
+                    result["index_build_time_ms"],
+                    result["average_latency_ms"],
+                    result["p50_latency_ms"],
+                    result["p95_latency_ms"],
+                    result["p99_latency_ms"],
+                    result["cache_hit_rate"],
+                    result.get("notes"),
+                ),
+            ).fetchone()
+        return dict(row)
+
+    def all(self, limit=100):
+        """Benchmark history, oldest first (natural for growth charts)."""
+        with self.pool.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM (
+                    SELECT * FROM benchmarks ORDER BY created_at DESC, id DESC
+                    LIMIT %s
+                ) recent
+                ORDER BY document_count ASC, created_at ASC
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]

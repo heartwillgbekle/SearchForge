@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import (
     autocomplete_routes,
+    benchmark_routes,
     document_routes,
     metrics_routes,
     search_routes,
@@ -40,6 +41,7 @@ app.include_router(search_routes.router)
 app.include_router(metrics_routes.router)
 app.include_router(document_routes.router)
 app.include_router(autocomplete_routes.router)
+app.include_router(benchmark_routes.router)
 
 
 @app.get("/")

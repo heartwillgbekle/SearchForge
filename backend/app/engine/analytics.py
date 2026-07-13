@@ -39,6 +39,27 @@ class Analytics:
     def slowest_queries(self, top_k=5):
         return self.queries.slowest_queries(top_k)
 
+    def recent_queries(self, top_k=10):
+        return self.queries.recent_queries(top_k)
+
+    def zero_result_queries(self, top_k=10):
+        return self.queries.zero_result_queries(top_k)
+
+    def zero_result_total(self):
+        return self.queries.zero_result_total()
+
+    def fastest_latency(self):
+        return self.queries.fastest_latency()
+
+    def slowest_latency(self):
+        return self.queries.slowest_latency()
+
+    def average_result_count(self):
+        return self.queries.average_result_count()
+
+    def searches_over_time(self, buckets=30):
+        return self.queries.searches_over_time(buckets)
+
     # ---- cache performance ----------------------------------------------
 
     def cache_hits(self):

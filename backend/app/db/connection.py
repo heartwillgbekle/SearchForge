@@ -50,6 +50,27 @@ CREATE TABLE IF NOT EXISTS index_metadata (
     ranking_method    TEXT NOT NULL,
     last_indexed_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- How long the in-memory index took to build on the last bootstrap.
+-- Added after the table's first version, so make it idempotent.
+ALTER TABLE index_metadata
+    ADD COLUMN IF NOT EXISTS index_build_time_ms REAL;
+
+CREATE TABLE IF NOT EXISTS benchmarks (
+    id                   SERIAL PRIMARY KEY,
+    dataset_name         TEXT NOT NULL,
+    document_count       INTEGER NOT NULL,
+    unique_terms         INTEGER NOT NULL,
+    total_postings       INTEGER NOT NULL,
+    index_build_time_ms  REAL NOT NULL,
+    average_latency_ms   REAL NOT NULL,
+    p50_latency_ms       REAL NOT NULL,
+    p95_latency_ms       REAL NOT NULL,
+    p99_latency_ms       REAL NOT NULL,
+    cache_hit_rate       REAL NOT NULL,
+    notes                TEXT,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 
